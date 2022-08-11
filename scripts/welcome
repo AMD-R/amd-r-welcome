@@ -364,28 +364,28 @@ class WelcomeWindow(QMainWindow):
             self.slider1.create_next(self.page_2, allow_previous=False)
         )
         self.slider2.disable_next()
-        self.page_2.input_text.textChanged[str].connect(
+        self.page_2.textChanged[str].connect(
             lambda text: self.enable_next(text, self.slider2)
         )
-        self.page_2.input_text.textChanged.connect(self.update_confirm)
+        self.page_2.textChanged.connect(self.update_confirm)
 
         # Slider for the 3rd page
         self.slider3: SliderWidget2 = (
             self.slider1.create_next(self.page_3)
         )
         self.slider3.disable_next()
-        self.page_3.input_text.textChanged[str].connect(
+        self.page_3.textChanged[str].connect(
             lambda text: self.enable_host(text)
         )
-        self.page_3.input_text.textChanged.connect(self.update_confirm)
+        self.page_3.textChanged.connect(self.update_confirm)
 
         # Slider for the 4th page
         self.slider4: SliderWidget2 = self.slider1.create_next(self.page_4)
         self.slider4.disable_next()
-        self.page_4.input_text.textChanged[str].connect(
+        self.page_4.textChanged[str].connect(
             lambda text: self.enable_port(text)
         )
-        self.page_4.input_text.textChanged.connect(self.update_confirm)
+        self.page_4.textChanged.connect(self.update_confirm)
 
         # Slider for the 5th page
         self.slider5: SliderWidget2 = self.slider1.create_next(self.page_5,
