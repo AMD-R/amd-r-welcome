@@ -1,0 +1,590 @@
+#!/usr/bin/env python3
+import sys
+from PyQt5.QtWidgets import QApplication, QMainWindow, QSizePolicy
+from PyQt5.QtWidgets import QGridLayout, QVBoxLayout
+from PyQt5.QtWidgets import QWidget, QPushButton, QLabel, QLineEdit
+from PyQt5.QtWidgets import QStackedWidget
+from PyQt5.QtCore import QParallelAnimationGroup, QPropertyAnimation
+from PyQt5.QtCore import QPoint, QSize, pyqtSlot, pyqtSignal, QTimer
+from PyQt5.QtGui import QResizeEvent
+
+from generate_rsa import generate_key_pair
+import requests
+from pathlib import Path
+from json import loads
+import yaml
+from secrets import token_hex
+
+
+class SliderWidget2(QWidget):
+    """Creates a slider widget used for animated page changing.
+    Parameters
+    ----------
+    widget: QWidget
+        The first widget to display
+    parent: QWidget
+        The parent widget in which the widget will display in
+    allow_previous: bool = True
+        Allow this page to go to the previous page
+    previous: QWidget = None
+        Sets the previous slider widget to switch to
+    slide_duration: int = 1000
+        The amount of time in ms to switch between widgets
+    next_text: str = "Next"
+        The text to display for the button to switch to the next page
+    previous_text: str = "Previous"
+        The text to display for the button to switch to the previous page
+    """
+    finished = pyqtSignal()
+
+    def __init__(self, widget: QWidget, parent: QWidget,
+                 allow_previous: bool = True, previous: QWidget = None,
+                 slide_duration: int = 1000,
+                 next_text: str = "Next", previous_text: str = "Previous"):
+        super().__init__()
+        if not isinstance(previous, self.__class__ | None):
+            raise TypeError("Invalid previous widget")
+        self.setParent(parent)
+        self.next_widget: type(self) = None
+        self.previous_widget: type(self) = previous
+        self.slide_duration: int = slide_duration
+        self.offset = 0
+
+        # Setting up widget
+        self.main_widget: QWidget = widget
+        self.widget: QWidget = QWidget(self)
+        self.widget.resizeEvent = self.widgetResizeEvent
+        self.parent().resizeEvent = self.parentResizeEvent
+
+        # Next Button
+        self.next_button: QPushButton = QPushButton(next_text, self)
+        self.next_button.clicked.connect(self.next)
+        self.next_button.setVisible(False)
+        # https://stackoverflow.com/questions/26128828/whats-the-proper-way-to-resize-widgets-in-a-layout
+        self.next_button.setSizePolicy(QSizePolicy.Expanding,
+                                       QSizePolicy.Fixed)
+
+        # Previous Button
+        self.previous_button: QPushButton = QPushButton(previous_text, self)
+        self.previous_button.clicked.connect(self.previous)
+        # https://stackoverflow.com/questions/26128828/whats-the-proper-way-to-resize-widgets-in-a-layout
+        self.previous_button.setSizePolicy(QSizePolicy.Expanding,
+                                           QSizePolicy.Fixed)
+        if allow_previous and self.previous_widget:
+            self.previous_button.setVisible(True)
+        else:
+            self.previous_button.setVisible(False)
+
+        layout: QGridLayout = QGridLayout()
+        layout.addWidget(widget,
+                         0, 0, 1, 2)
+        layout.addWidget(self.previous_button,
+                         1, 0)
+        layout.addWidget(self.next_button,
+                         1, 1)
+        self.widget.setLayout(layout)
+
+    def create_next(self, widget: QWidget, allow_previous: bool = True,
+                    overide_next: bool = False, slide_duration: int = 1000,
+                    next_text: str = "Next", previous_text: str = "Previous"
+                    ) -> "SliderWidget2":
+        """Creates the next page.
+        The new widget will be appended to the last page automatically.
+        If overide_next is set to True. It will overide the current next page.
+        Parameters
+        ----------
+        widget: QWidget
+            The next widget to add to the sliding widget
+        allow_previous: bool = True
+            Allow next page to go back to the previous page
+        overide_next: bool = False
+            Determine if it will append to the last page or not
+        slide_duration: int = self.
+            The amount of time in ms to switch between widgets
+        next_text: str = "Next"
+            The text to display for the button to switch to the next page
+        previous_text: str = "Previous"
+            The text to display for the button to switch to the previous page
+
+        Returns
+        -------
+        next_widget: SliderWidget2
+            The widget to the next page
+        """
+        while self.next_widget and not overide_next:
+            self = self.next_widget
+        self.next_widget = self.__class__(widget, self.parent(),
+                                          allow_previous, self, slide_duration,
+                                          next_text, previous_text)
+        self.next_button.setVisible(True)
+        self.next_widget.offset = self.parent().width()
+        return self.next_widget
+
+    @pyqtSlot()
+    def next(self, ):
+        """Moves to the next page."""
+        # Setting up new positions
+        offset = QPoint(self.parent().width(), 0)
+        self_pos_new = self.property("pos") - offset
+        next_pos_new = self.next_widget.property("pos") - offset
+
+        # Setting new offset
+        self.offset = -self.parent().width()
+        self.next_widget.offset = 0
+
+        # Setting Up Animations
+        anim_group = QParallelAnimationGroup(self)
+        # Current widget
+        anim_self = QPropertyAnimation(self, b"pos")
+        anim_self.setEndValue(self_pos_new)
+        anim_self.setDuration(self.slide_duration)
+        anim_group.addAnimation(anim_self)
+        # Next Widget
+        anim_next = QPropertyAnimation(self.next_widget, b"pos")
+        anim_next.setEndValue(next_pos_new)
+        anim_next.setDuration(self.slide_duration)
+        anim_group.addAnimation(anim_next)
+
+        # Starting animation
+        anim_group.start()
+        anim_group.finished.connect(self.animation_finished)
+
+    @pyqtSlot()
+    def previous(self, ):
+        """Moves to the previous page."""
+        # Setting up new positions
+        offset = QPoint(self.parent().width(), 0)
+        self_pos_new = self.property("pos") + offset
+        previous_pos_new = self.previous_widget.property("pos") + offset
+
+        # Setting new offset
+        self.offset = self.parent().width()
+        self.previous_widget.offset = 0
+
+        # Setting Up Animations
+        anim_group = QParallelAnimationGroup(self)
+        # Current widget
+        anim_self = QPropertyAnimation(self, b"pos")
+        anim_self.setEndValue(self_pos_new)
+        anim_self.setDuration(self.slide_duration)
+        anim_group.addAnimation(anim_self)
+        # Next Widget
+        anim_previous = QPropertyAnimation(self.previous_widget, b"pos")
+        anim_previous.setDuration(self.slide_duration)
+        anim_previous.setEndValue(previous_pos_new)
+        anim_group.addAnimation(anim_previous)
+
+        # Starting animation
+        anim_group.start()
+        anim_group.finished.connect(self.animation_finished)
+
+    def widgetResizeEvent(self, event: QResizeEvent):
+        """Moves all the widgets to the center.
+        Parameters
+        ----------
+        event: QResizeEvent
+            The resize event
+        """
+        super().resizeEvent(event)
+
+        # Getting the size of the widget
+        size: QSize = self.widget.size()
+        # Resizing the slider widget
+        self.resize(size)
+        # Getting Values
+        width: int = size.width()
+        height: int = size.height()
+        parent: QWidget = self.parent()
+        offset: int = 0
+        # Setting offset
+        offset = self.offset
+        x = parent.width() / 2 - width / 2 + offset
+        y = parent.height() / 2 - height / 2
+        # Creating new pos and setting it
+        point: QPoint = QPoint(int(x),
+                               int(y))
+        self.setProperty("pos", point)
+
+    def parentResizeEvent(self, event: QResizeEvent):
+        """Updates widget postion when parent resizes.
+        Parameters
+        ----------
+        event: QResizeEvent
+            The resize event
+        """
+        super().resizeEvent(event)
+        ratio = event.size().width() / event.oldSize().width()
+        if ratio < 0:
+            ratio = 1
+
+        self.offset *= ratio
+        self.widgetResizeEvent(event)
+
+        while self.previous_widget is not None:
+            self = self.previous_widget
+            self.offset *= ratio
+            self.widgetResizeEvent(event)
+
+    def disable_next(self) -> None:
+        """Disables the next button."""
+        self.next_button.setEnabled(False)
+
+    def disable_previous(self) -> None:
+        """Disables the previous button."""
+        self.previous_button.setEnabled(False)
+
+    def enable_next(self) -> None:
+        """Enables the next button."""
+        self.next_button.setEnabled(True)
+
+    def enable_previous(self) -> None:
+        """Enables the previous button."""
+        self.previous_button.setEnabled(True)
+
+    def toggle_next(self) -> bool:
+        """Toggles the enable state of the next button.
+        Returns
+        -------
+        state: bool
+            The new state of the next button
+        """
+        if self.next_button.isEnabled():
+            self.disable_next()
+        else:
+            self.enable_next()
+        return self.next_button.isEnabled()
+
+    def toggle_previous(self) -> bool:
+        """Toggles the enable state of the previous button.
+        Returns
+        -------
+        state: bool
+            The new state of the previous button
+        """
+        if self.previous_button.isEnabled():
+            self.disable_previous()
+        else:
+            self.enable_previous()
+        return self.previous_button.isEnabled()
+
+    @pyqtSlot()
+    def animation_finished(self):
+        self.finished.emit()
+
+
+class QLineEditWithLabel(QWidget):
+    """QLineEdit widget attached with a label.
+
+    Parameters
+    ----------
+    text: str
+        The label for the QLineEdit
+    """
+    textChanged = pyqtSignal(str)
+
+    def __init__(self, text: str, edit_text: str = "", *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.label = QLabel(text)
+        self.input_text = QLineEdit(edit_text)
+
+        self.input_text.textChanged.connect(lambda text:
+                                            self.textChanged.emit(text))
+
+        self.main_layout = QVBoxLayout()
+        self.main_layout.addWidget(self.label)
+        self.main_layout.addWidget(self.input_text)
+
+        self.setLayout(self.main_layout)
+
+    def text(self) -> str:
+        """Returns the text of the QLineEdit."""
+        return self.input_text.text()
+
+
+class WelcomeWindow(QMainWindow):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.resize(1280, 720)
+        self.retry_count = 0
+        self.key_generated = False
+
+        # Setting file paths
+        script_path = Path('.').resolve()
+        src_path = script_path.parent.parent
+        config_path = src_path.joinpath('iot/cfg')
+        self.private_file = config_path.joinpath('private.pem')
+        self.public_file = config_path.joinpath('public.pem')
+        self.server_file = config_path.joinpath('server.yml')
+        # Generating private key token
+        self.password = token_hex(32)
+
+        # Adding dummy central widget
+        # https://doc.qt.io/qt-5/qmainwindow.html#qt-main-window-framework
+        self.setCentralWidget(QWidget())
+
+        # Setting up pages
+        # Page 1
+        self.page_1 = QLabel("Thank You for choosing the AMD-R! Press Next to "
+                             "continue")
+        # Page 2
+        self.page_2 = QLineEditWithLabel("Please input name for this AMD-R")
+        # Page 3
+        self.page_3 = QLineEditWithLabel("Please input the server to connect to\n\
+        Including the http/https", "https://")
+        # Page 4
+        self.page_4 = QLineEditWithLabel("Please input server port number")
+        # Page 5
+        self.page_5 = QLabel("Name: \n"
+                             "Host: \n"
+                             "Port: ")
+        # Page 6
+        self.page_6 = QLabel("Generating RSA key...")
+        self.text_1 = "Making Registration Request..."
+        self.text_2 = "Waiting for verification..."
+        self.text_3 = "AMD-R Succesfully Registered."
+
+        # Page 7
+        self.page_7 = QWidget()
+        page_7_layout = QVBoxLayout(self.page_7)
+        page_7_layout.addWidget(QLabel("AMD-R setup complete."))
+        exit_button = QPushButton("Exit")
+        exit_button.clicked.connect(self.close)
+        page_7_layout.addWidget(exit_button)
+
+        # Setting Typed in data
+        self.name_text = self.page_2.text()
+        self.host_text = self.page_3.text()
+        self.port_text = self.page_4.text()
+
+        # Slider for 1st page
+        self.slider1 = SliderWidget2(self.page_1, self)
+
+        # Slider for the 2nd page
+        self.slider2: SliderWidget2 = (
+            self.slider1.create_next(self.page_2, allow_previous=False)
+        )
+        self.slider2.disable_next()
+        self.page_2.input_text.textChanged[str].connect(
+            lambda text: self.enable_next(text, self.slider2)
+        )
+        self.page_2.input_text.textChanged.connect(self.update_confirm)
+
+        # Slider for the 3rd page
+        self.slider3: SliderWidget2 = (
+            self.slider1.create_next(self.page_3)
+        )
+        self.slider3.disable_next()
+        self.page_3.input_text.textChanged[str].connect(
+            lambda text: self.enable_host(text)
+        )
+        self.page_3.input_text.textChanged.connect(self.update_confirm)
+
+        # Slider for the 4th page
+        self.slider4: SliderWidget2 = self.slider1.create_next(self.page_4)
+        self.slider4.disable_next()
+        self.page_4.input_text.textChanged[str].connect(
+            lambda text: self.enable_port(text)
+        )
+        self.page_4.input_text.textChanged.connect(self.update_confirm)
+
+        # Slider for the 5th page
+        self.slider5: SliderWidget2 = self.slider1.create_next(self.page_5,
+                                                               slide_duration=1
+                                                               )
+        self.slider5.next_button.clicked.connect(lambda: QTimer.singleShot(500,
+                                                 self.generate_rsa))
+
+        # Slider for the 6th page
+        self.slider6: SliderWidget2 = (
+            self.slider1.create_next(self.page_6, allow_previous=False)
+        )
+        self.slider6.finished.connect(
+            lambda: self.page_6.setText(self.text_1)
+        )
+        self.slider6.finished.connect(
+            lambda: self.update_size(self.slider6.widget)
+        )
+        self.slider6.finished.connect(
+            lambda: self.slider6.previous_button.setVisible(False)
+        )
+        self.slider6.disable_next()
+
+        # Slider for the 7th page
+        self.slider7: SliderWidget2 = (
+            self.slider1.create_next(self.page_7, allow_previous=False)
+        )
+
+    @pyqtSlot()
+    def enable_next(self, text: str, slider: SliderWidget2) -> None:
+        """Slot to enable the next button of the slider when the QLineEdit changed.
+        Parameters
+        ----------
+        text: str
+            Text of the QLineEdit
+        slider: SliderWidget2
+            The slider widget in which the text changed
+        """
+        if len(text) > 0:
+            slider.enable_next()
+        else:
+            slider.disable_next()
+
+    @pyqtSlot()
+    def enable_host(self, text: str) -> None:
+        """Slot to enable the next button of the host slider when the QLineEdit
+        changed.
+        Parameters
+        ----------
+        text: str
+            Text of the QLineEdit
+        """
+        if text.startswith(("http://", "https://")):
+            index = text.index("/")
+            self.enable_next(text[index + 2:], self.slider3)
+        else:
+            self.slider3.disable_next()
+
+    @pyqtSlot()
+    def enable_port(self, text: str) -> None:
+        """Slot to enable the next button of the port slider when the QLineEdit
+        changed.
+        Parameters
+        ----------
+        text: str
+            Text of the QLineEdit
+        """
+        if text.isnumeric():
+            self.slider4.enable_next()
+        else:
+            self.slider4.disable_next()
+
+    @pyqtSlot()
+    def update_confirm(self) -> None:
+        """Slot to update the entered data label."""
+        self.name_text = self.page_2.text()
+        self.host_text = self.page_3.text()
+        self.port_text = self.page_4.text()
+
+        # Updating Typed Items
+        self.page_5.setText(f"Name: {self.name_text}\n"
+                            f"Host: {self.host_text}\n"
+                            f"Port: {self.port_text}")
+
+        # Resizing Slider
+        self.update_size(self.slider5.widget)
+
+    def update_size(self, widget: QWidget) -> QSize:
+        """Resize the QLabel when the text is changed."""
+        widget.resize(widget.sizeHint())
+        return widget.size()
+
+    @pyqtSlot()
+    def generate_rsa(self) -> None:
+        """Generates the RSA key pair."""
+        if not self.key_generated:
+            generate_key_pair(self.password, private_file=self.private_file,
+                              public_file=self.public_file)
+            self.key_generated = True
+            self.page_6.setText(self.text_1)
+            self.update_size(self.slider6.widget)
+        QTimer.singleShot(500, self.make_registration)
+
+    def show_error(self, message: str, visible: bool) -> None:
+        """Shows the error page during the registration process.
+        Parameters
+        ----------
+        message: str
+            The error message
+        visible: bool
+            Sets the visibility of the previous button
+        """
+        self.page_6.setText(message)
+        self.slider6.previous_button.setVisible(visible)
+        self.update_size(self.slider6.widget)
+
+    def make_registration(self) -> None:
+        """Make a registration request to the server."""
+        try:
+            self.retry_count += 1
+
+            # Reading public key
+            with self.public_file.open('rb') as f:
+                key = f.read().decode()
+
+            # Making Request
+            self.registartion = requests.post(
+                f"{self.host_text}:{self.port_text}/api/amd-r/register", json={
+                    'name': self.name_text,
+                    'key': key
+                }
+            )
+
+            # Checking the request status
+            if self.registartion.status_code == 400:
+                self.show_error("AMD-R with the same name already registered. "
+                                "Please change the name.", True)
+            else:
+                self.page_6.setText(self.text_2)
+                self.update_size(self.slider6.widget)
+                self.check_verification()
+                self.retry_count = 0
+        except requests.ConnectionError:
+            # Retry 10 times if cannot connect to server
+            if self.retry_count < 10:
+                self.show_error("Cannot connect to server. Retrying...", False)
+                QTimer.singleShot(1000, self.make_registration)
+            else:
+                self.retry_count = 0
+                self.show_error("Unable to connect to server. "
+                                "Please retype information", True)
+        except requests.exceptions.InvalidURL:
+            # If the url is invalid
+            self.show_error("Invalid URL please retype information.", True)
+
+    def check_verification(self) -> None:
+        """Checks if the AMD-R is verified."""
+        try:
+            # Making request
+            self.verification = requests.post(
+                f"{self.host_text}:{self.port_text}"
+                "/api/amd-r/test-verification",
+                json={
+                    'name': self.name_text,
+                }
+            )
+
+            # Getting results
+            verification_status = loads(self.verification.text)["results"]
+            # Retry if still haven't verified
+            if not verification_status:
+                QTimer.singleShot(1000, self.check_verification)
+            else:
+                # Write config file and change page if verified
+                self.write_config()
+                self.page_6.setText(self.text_3)
+                self.update_size(self.slider6.widget)
+                self.slider6.enable_next()
+        except requests.ConnectionError:
+            # If cannot connect to server
+            self.show_error("Cannot connect to server. Retrying...", False)
+            QTimer.singleShot(1000, self.make_registration)
+
+    def write_config(self) -> None:
+        """Writes server.yml file."""
+        with open(self.server_file, 'w') as f:
+            yaml.dump({
+                'host': self.host_text,
+                'port': int(self.port_text),
+                'private_key': 'private.pem',
+                'public_key': 'public.pem',
+                'password': self.password
+            }, f)
+
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+
+    window = WelcomeWindow()
+    window.showFullScreen()
+
+    sys.exit(app.exec_())
