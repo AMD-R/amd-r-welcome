@@ -3,7 +3,6 @@ import sys
 from PyQt5.QtWidgets import QApplication, QMainWindow, QSizePolicy
 from PyQt5.QtWidgets import QGridLayout, QVBoxLayout
 from PyQt5.QtWidgets import QWidget, QPushButton, QLabel, QLineEdit
-from PyQt5.QtWidgets import QStackedWidget
 from PyQt5.QtCore import QParallelAnimationGroup, QPropertyAnimation
 from PyQt5.QtCore import QPoint, QSize, pyqtSlot, pyqtSignal, QTimer
 from PyQt5.QtGui import QResizeEvent
