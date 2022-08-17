@@ -310,7 +310,7 @@ class WelcomeWindow(QMainWindow):
         # Setting file paths
         script_path = Path('.').resolve()
         src_path = script_path.parent.parent
-        config_path = src_path.joinpath('iot/cfg')
+        config_path = src_path.joinpath('iot/config')
         self.private_file = config_path.joinpath('private.pem')
         self.public_file = config_path.joinpath('public.pem')
         self.server_file = config_path.joinpath('server.yml')
