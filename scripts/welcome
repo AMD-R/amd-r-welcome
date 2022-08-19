@@ -28,6 +28,9 @@ class WelcomeWindow(QMainWindow):
         self.private_file = config_path.joinpath('private.pem')
         self.public_file = config_path.joinpath('public.pem')
         self.server_file = config_path.joinpath('server.yml')
+
+        # Creating Needed path
+        Path.mkdir(config_path)
         # Generating private key token
         self.password = token_hex(32)
 
