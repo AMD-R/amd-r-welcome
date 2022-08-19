@@ -64,7 +64,7 @@
   <exec_depend>rospy</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
-  <exec_depend>python3-PyQt5</exec_depend>
+  <exec_depend>python3-pyqt5</exec_depend>
   <exec_depend>python3-requests</exec_depend>
   <exec_depend>python3-cryptography</exec_depend>
   <exec_depend>python3-pyyaml</exec_depend>
