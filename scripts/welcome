@@ -15,9 +15,9 @@ from secrets import token_hex
 
 
 class WelcomeWindow(QMainWindow):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.resize(1280, 720)
+    """Main Window for AMD-R welcome script."""
+    def __init__(self):
+        super().__init__()
         self.retry_count = 0
         self.key_generated = False
 
