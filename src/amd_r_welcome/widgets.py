@@ -4,7 +4,6 @@ from PyQt5.QtWidgets import (QSizePolicy, QGridLayout, QVBoxLayout,
 from PyQt5.QtGui import QResizeEvent
 from PyQt5.QtCore import (QPoint, QSize, pyqtSlot, pyqtSignal,
                           QParallelAnimationGroup, QPropertyAnimation)
-from types import NoneType
 
 
 class SliderWidget2(QWidget):
@@ -33,7 +32,7 @@ class SliderWidget2(QWidget):
                  slide_duration: int = 1000,
                  next_text: str = "Next", previous_text: str = "Previous"):
         super().__init__()
-        if not isinstance(previous, (self.__class__, NoneType)):
+        if not isinstance(previous, (self.__class__, type(None))):
             raise TypeError("Invalid previous widget")
         self.setParent(parent)
         self.next_widget: type(self) = None
