@@ -32,7 +32,7 @@ class SliderWidget2(QWidget):
                  slide_duration: int = 1000,
                  next_text: str = "Next", previous_text: str = "Previous"):
         super().__init__()
-        if not isinstance(previous, self.__class__ | None):
+        if not isinstance(previous, (self.__class__, None)):
             raise TypeError("Invalid previous widget")
         self.setParent(parent)
         self.next_widget: type(self) = None
