@@ -30,7 +30,7 @@ class WelcomeWindow(QMainWindow):
         self.server_file = config_path.joinpath('server.yml')
 
         # Creating Needed path
-        Path.mkdir(config_path)
+        Path.mkdir(config_path, exist_ok=True)
         # Generating private key token
         self.password = token_hex(32)
 
