@@ -3,10 +3,10 @@ import sys
 from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.QtWidgets import QVBoxLayout
 from PyQt5.QtWidgets import QWidget, QPushButton, QLabel
-from PyQt5.QtCore import QSize, pyqtSlot, QTimer
+from PyQt5.QtCore import QSize, pyqtSlot, QTimer, QThread, Qt, pyqtSignal
 
-from amd_r_welcome.generate_rsa import generate_key_pair
 from amd_r_welcome.widgets import SliderWidget2, QLineEditWithLabel
+from amd_r_welcome.wrappers import HTTPRequest, GenerateRSA
 import requests
 from pathlib import Path
 from json import loads
@@ -16,6 +16,9 @@ from secrets import token_hex
 
 class WelcomeWindow(QMainWindow):
     """Main Window for AMD-R welcome script."""
+    make_request = pyqtSignal(str, str, dict)
+    make_key = pyqtSignal()
+
     def __init__(self):
         super().__init__()
         self.retry_count = 0
@@ -28,6 +31,16 @@ class WelcomeWindow(QMainWindow):
         self.private_file = config_path.joinpath('private.pem')
         self.public_file = config_path.joinpath('public.pem')
         self.server_file = config_path.joinpath('server.yml')
+
+        # Creating Thread
+        self.thread = QThread(self)
+        # Ensuring it shuts down properly
+        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.destroyed.connect(lambda: (
+            print("Waiting for thread to stop properly"),
+            self.thread.quit(),
+            self.thread.wait()
+        ))
 
         # Creating Needed path
         Path.mkdir(config_path, exist_ok=True)
@@ -198,11 +211,27 @@ class WelcomeWindow(QMainWindow):
     def generate_rsa(self) -> None:
         """Generates the RSA key pair."""
         if not self.key_generated:
-            generate_key_pair(self.password, private_file=self.private_file,
-                              public_file=self.public_file)
-            self.key_generated = True
-            self.page_6.setText(self.text_1)
-            self.update_size(self.slider6.widget)
+            self.rsa = GenerateRSA(self.password,
+                                   private_file=self.private_file,
+                                   public_file=self.public_file)
+            self.rsa.moveToThread(self.thread)
+            self.rsa.completed.connect(self.handle_key)
+            self.thread.finished.connect(self.rsa.deleteLater)
+            self.make_key.connect(self.rsa.gen_key)
+            self.rsa.error[Exception].connect(
+                lambda err: self.show_error(str(err), True)
+            )
+            self.make_key.emit()
+            self.thread.start()
+        else:
+            self.registartion.deleteLater()
+            self.make_registration()
+
+    @pyqtSlot()
+    def handle_key(self):
+        self.key_generated = True
+        self.page_6.setText(self.text_1)
+        self.update_size(self.slider6.widget)
         QTimer.singleShot(500, self.make_registration)
 
     def show_error(self, message: str, visible: bool) -> None:
