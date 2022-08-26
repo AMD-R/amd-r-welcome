@@ -249,42 +249,67 @@ class WelcomeWindow(QMainWindow):
 
     def make_registration(self) -> None:
         """Make a registration request to the server."""
-        try:
+        protocol = self.host_text[:self.host_text.find("/") - 1]
+        host = self.host_text[self.host_text.find("/") + 2:]
+        port = self.port_text
+        path = "api/amd-r/register"
+        url = f"{protocol}://{host}:{port}/{path}"
+
+        # Reading public key
+        with self.public_file.open('rb') as f:
+            self.key = f.read().decode()
+
+        self.registartion = HTTPRequest(url, method="POST")
+        self.make_request[str, str, dict].connect(
+            self.registartion.make_request
+        )
+        self.registartion.completed.connect(self.handle_registration)
+        self.registartion.error[Exception].connect(self.handle_http_error)
+        self.thread.finished.connect(self.registartion.deleteLater)
+        self.registartion.moveToThread(self.thread)
+
+        # Making Request
+        self.kwargs = {
+            'json': {
+                'name': self.name_text,
+                'key': self.key
+            }
+        }
+        self.make_request.emit("", "", self.kwargs)
+
+    @pyqtSlot(requests.Response)
+    def handle_registration(self, res: requests.Response) -> None:
+        # Checking the request status
+        if res.status_code == 400:
+            self.show_error("AMD-R with the same name already registered. "
+                            "Please change the name.", True)
+        else:
+            self.page_6.setText(self.text_2)
+            self.update_size(self.slider6.widget)
+            self.check_verification()
+            self.retry_count = 0
+
+    @pyqtSlot(Exception)
+    def handle_http_error(self, err: Exception) -> None:
+        error_type = type(err)
+        if error_type is requests.ConnectionError:
             self.retry_count += 1
-
-            # Reading public key
-            with self.public_file.open('rb') as f:
-                key = f.read().decode()
-
-            # Making Request
-            self.registartion = requests.post(
-                f"{self.host_text}:{self.port_text}/api/amd-r/register", json={
-                    'name': self.name_text,
-                    'key': key
-                }
-            )
-
-            # Checking the request status
-            if self.registartion.status_code == 400:
-                self.show_error("AMD-R with the same name already registered. "
-                                "Please change the name.", True)
-            else:
-                self.page_6.setText(self.text_2)
-                self.update_size(self.slider6.widget)
-                self.check_verification()
-                self.retry_count = 0
-        except requests.ConnectionError:
             # Retry 10 times if cannot connect to server
             if self.retry_count < 10:
                 self.show_error("Cannot connect to server. Retrying...", False)
-                QTimer.singleShot(1000, self.make_registration)
+
+                def emit():
+                    self.make_request.emit("", "", self.kwargs)
+                QTimer.singleShot(1000, emit)
             else:
                 self.retry_count = 0
                 self.show_error("Unable to connect to server. "
                                 "Please retype information", True)
-        except requests.exceptions.InvalidURL:
+        elif error_type is requests.exceptions.InvalidURL:
             # If the url is invalid
             self.show_error("Invalid URL please retype information.", True)
+        else:
+            self.show_error(str(err), True)
 
     def check_verification(self) -> None:
         """Checks if the AMD-R is verified."""
