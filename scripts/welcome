@@ -261,10 +261,10 @@ class WelcomeWindow(QMainWindow):
         """Checks if the AMD-R is verified."""
         try:
             # Making request
-            self.verification = requests.post(
+            self.verification = requests.get(
                 f"{self.host_text}:{self.port_text}"
                 "/api/amd-r/test-verification",
-                json={
+                params={
                     'name': self.name_text,
                 }
             )
